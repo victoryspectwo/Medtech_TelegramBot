@@ -15,6 +15,10 @@ from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler, CallbackContext
 
+# if os is windows, set pytesseract path
+if os.name == 'nt':
+    pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+
 
 
 load_dotenv()
@@ -22,7 +26,7 @@ TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 DB_URL = os.getenv("DATABASE_URL") #db not utilised yet
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY") #temporarily using OpenAI key cause GPU usage is killing my laptop
 
-pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+# pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
 
 async def start(update: Update, context: CallbackContext): # set up /start command
@@ -36,7 +40,7 @@ async def start(update: Update, context: CallbackContext): # set up /start comma
 
 async def extract_text_from_meds(update: Update, context: CallbackContext):
     """Extracts medicine names from prescription images using OCR and asks for confirmation."""
-    
+
     # Check if image is sent as a photo or a document
     if update.message.photo:
         photo_file = await update.message.photo[-1].get_file()
@@ -64,12 +68,12 @@ async def extract_text_from_meds(update: Update, context: CallbackContext):
     _, processed_img = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)
 
     # Extract text using OCR
-    extracted_text = pytesseract.image_to_string(processed_img, config="--psm 6")  
+    extracted_text = pytesseract.image_to_string(processed_img, config="--psm 6")
 
     # Send the extracted text back to the user for confirmation
     if extracted_text.strip():
         context.user_data["extracted_meds"] = extracted_text.strip()
-        
+
         keyboard = [[InlineKeyboardButton("✅ Confirm", callback_data="confirm_med"),
                      InlineKeyboardButton("❌ Retry", callback_data="retry_med")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -92,7 +96,7 @@ async def button_handler(update: Update, context: CallbackContext):
 
     if query.data == "confirm_med":
         extracted_meds = context.user_data.get("extracted_meds", "Unknown")
-        await query.message.edit_text(f"✅ Confirmed! Fetching information for:\n```{extracted_meds}```", parse_mode="Markdown")
+        await query.message.edit_text(f"✅ Confirmed! Fetching information for:\n```\n{extracted_meds}```", parse_mode="Markdown")
 
         # Fetch medical advice from Llama 3.2
         await get_info_from_llm(update, context, extracted_meds)
@@ -109,8 +113,8 @@ async def get_info_from_llm(update: Update, context: CallbackContext, extracted_
     if not extracted_text.strip():
         await context.bot.send_message(chat_id=update.effective_chat.id, text="⚠️ Unable to retrieve the medication name.")
         return
-    
-    print(f"Sending medicine to GPT-4: {extracted_text}") 
+
+    print(f"Sending medicine to LLM: {extracted_text}")
 
     prompt = f"""
     You are a helpful medical assistant. The user has asked for information
@@ -125,38 +129,39 @@ async def get_info_from_llm(update: Update, context: CallbackContext, extracted_
 
     ---
     ### **Format your response like this:**
-    💊 **Medication Name**  
-   - **Uses:** Short and clear description.  
-   - **Dosage:** Clearly mention when and how to take it.  
-   - **Precautions:** 🔴 (Red emojis for warnings) List important things to avoid.  
+    💊 **Medication Name**
+   - **Uses:** Short and clear description.
+   - **Dosage:** Clearly mention when and how to take it.
+   - **Precautions:** 🔴 (Red emojis for warnings) List important things to avoid.
    - **Side Effects:** ⚠️ (Yellow emoji for mild side effects) Short and simple list.
 
     Remind the user when to take it at the time of day. Keep the response **short, concise, and easy to read in a Telegram message.**.
     """
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4",  # Use "gpt-3.5-turbo" if needed
-            messages=[{"role": "user", "content": prompt}],
-        )
+    # try:
+    #     response = client.chat.completions.create(
+    #         model="gpt-4",  # Use "gpt-3.5-turbo" if needed
+    #         messages=[{"role": "user", "content": prompt}],
+    #     )
 
-        generated_text = response.choices[0].message.content.strip()
+    #     generated_text = response.choices[0].message.content.strip()
 
-        await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text=f"💊 **Medication Instructions:**\n\n{generated_text}",
-                parse_mode="Markdown"
-            )
+    #     await context.bot.send_message(
+    #             chat_id=update.effective_chat.id,
+    #             text=f"💊 **Medication Instructions:**\n\n{generated_text}",
+    #             parse_mode="Markdown"
+    #         )
 
-    except Exception as e:
-        print(f"❌ OpenAI GPT-4 Error: {e}")
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="❌ Error retrieving medical advice.")
+    # except Exception as e:
+    #     print(f"❌ OpenAI GPT-4 Error: {e}")
+    #     await context.bot.send_message(chat_id=update.effective_chat.id, text="❌ Error retrieving medical advice.")
 
 
 #old ollama try-except block (for use if needed)
-    """
+
     try:
-        response = ollama.chat(model="llama3.2", messages=[{"role": "user", "content": prompt}])
-        generated_text = response["message"]
+        response = ollama.chat(model="qwen2.5:7b", messages=[{"role": "user", "content": prompt}])
+        generated_text_obj = response["message"]
+        generated_text  = generated_text_obj["content"]
 
         # Send response to Telegram using chat_id (since update.message may be None)
         await context.bot.send_message(chat_id=update.effective_chat.id, text=f"💊 **Medication Instructions:**\n\n{generated_text}")
@@ -164,7 +169,7 @@ async def get_info_from_llm(update: Update, context: CallbackContext, extracted_
     except Exception as e:
         print(f"❌ Llama 3.2 Error: {e}")  # Debugging
         await context.bot.send_message(chat_id=update.effective_chat.id, text="❌ Error retrieving medical advice.")
-    """
+
 
 
 def main():
@@ -172,7 +177,7 @@ def main():
     app = Application.builder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))  # Handles /start command
-    app.add_handler(MessageHandler(filters.PHOTO, extract_text_from_meds))  
+    app.add_handler(MessageHandler(filters.PHOTO, extract_text_from_meds))
     app.add_handler(CallbackQueryHandler(button_handler))  # Handles confirmation buttons
 
     print("✅ Bot is running... Listening for messages")
@@ -180,4 +185,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
