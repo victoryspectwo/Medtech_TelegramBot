@@ -1,0 +1,11 @@
+python-telegram-bot
+fastapi
+uvicorn
+ollama
+schedule
+pytesseract
+opencv-python
+langchain
+langchain-ollama
+schedule
+
